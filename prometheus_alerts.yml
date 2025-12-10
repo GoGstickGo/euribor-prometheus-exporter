@@ -1,0 +1,213 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: euribor-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: prometheus
+spec:
+  groups:
+    - name: euribor_rate_changes
+      interval: 5m
+      rules:
+        # ========================================================================
+        # RATE CHANGE ALERTS
+        # ========================================================================
+        - alert: EuriborRateIncreaseModerate
+          expr: |
+            (
+              max by(maturity) (euribor_rate_percent)
+              - max by(maturity) (euribor_rate_percent offset 6h)
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            category: finance
+          annotations:
+            summary: "Euribor {{ $labels.maturity }} increased moderately"
+            description: "{{ $labels.maturity }} increased by {{ $value | humanize }}% in the last 6 hours. Current rate: {{ with query \"max by(maturity) (euribor_rate_percent{maturity='\" }}{{ . | first | value | humanize }}{{ end }}%"
+
+        # Major rate increase (critical)
+        - alert: EuriborRateIncreaseMajor
+          expr: |
+            (
+              max by(maturity) (euribor_rate_percent)
+              - max by(maturity) (euribor_rate_percent offset 6h)
+            ) > 0.15
+          for: 5m
+          labels:
+            severity: critical
+            category: finance
+          annotations:
+            summary: "Euribor {{ $labels.maturity }} increased significantly!"
+            description: "MAJOR CHANGE: {{ $labels.maturity }} increased by {{ $value | humanize }}% in 6 hours. This is unusual and may indicate market stress."
+
+        # Rate increase alert (12M specific)
+        - alert: Euribor12MIncreased
+          expr: |
+            (
+              max by(maturity) (euribor_rate_percent{maturity="12M"})
+              - max by(maturity) (euribor_rate_percent{maturity="12M"} offset 7d)
+            ) > 0.1
+          for: 1h
+          labels:
+            severity: warning
+            category: personal_mortgage
+          annotations:
+            summary: "12M Euribor increased by {{ $value | humanize }}% this week"
+            description: |
+              Your mortgage reference rate increased by {{ $value | humanize }}% in the last 7 days.
+
+        # Rate decrease (good news, lower severity)
+        - alert: EuriborRateDecrease
+          expr: |
+            (
+              max by(maturity) (euribor_rate_percent)
+              - max by(maturity) (euribor_rate_percent offset 6h)
+            ) < -0.05
+          for: 5m
+          labels:
+            severity: info
+            category: finance
+          annotations:
+            summary: "Euribor {{ $labels.maturity }} decreased"
+            description: "Good news! {{ $labels.maturity }} decreased by {{ $value | humanize }}% in the last 6 hours."
+
+    - name: euribor_exporter_health
+      interval: 1m
+      rules:
+        # ========================================================================
+        # EXPORTER HEALTH ALERTS
+        # ========================================================================
+
+        # Individual maturity scrape failure
+        - alert: EuriborScrapeFailed
+          expr: max by(maturity) (euribor_scrape_success) == 0
+          for: 5m
+          labels:
+            severity: warning
+            category: monitoring
+          annotations:
+            summary: "Euribor scrape failed for {{ $labels.maturity }}"
+            description: "Failed to scrape {{ $labels.maturity }} Euribor rate for 5 minutes. Check exporter logs: kubectl logs -n monitoring deployment/euribor-exporter"
+
+        # Complete exporter failure (more serious)
+        - alert: EuriborExporterDown
+          expr: |
+            sum(euribor_scrape_success) == 0
+            or
+            absent(euribor_scrape_success)
+          for: 5m
+          labels:
+            severity: critical
+            category: monitoring
+          annotations:
+            summary: "Euribor exporter completely down"
+            description: "All Euribor rates failing or exporter is down. Check pod: kubectl get pods -n monitoring -l app=euribor-exporter"
+            runbook: "kubectl logs -n monitoring deployment/euribor-exporter"
+
+        # Data staleness (accounts for business days)
+        - alert: EuriborDataStale
+          expr: |
+            (time() - max by(maturity) (euribor_last_update_timestamp)) > 7200
+          for: 10m
+          labels:
+            severity: warning
+            category: monitoring
+          annotations:
+            summary: "Euribor data stale for {{ $labels.maturity }}"
+            description: "{{ $labels.maturity }} hasn't updated in {{ $value | humanizeDuration }}. ECB publishes daily at ~11:00 CET on business days. Check if today is a weekend/holiday."
+
+        # Scrape duration too long
+        - alert: EuriborScrapeSlow
+          expr: max by(maturity) (euribor_scrape_duration_seconds) > 10
+          for: 15m
+          labels:
+            severity: info
+            category: performance
+          annotations:
+            summary: "Euribor scrape is slow"
+            description: "Scraping {{ $labels.maturity }} is taking {{ $value }}s, which is unusually long. ECB API may be slow."
+
+    - name: euribor_thresholds
+      interval: 5m
+      rules:
+        # ========================================================================
+        # PERSONAL FINANCE THRESHOLDS
+        # ========================================================================
+
+        # Absolute rate threshold (12M - your main rate)
+        - alert: Euribor12MAboveThreshold
+          expr: max by(maturity) (euribor_rate_percent{maturity="12M"}) > 2.4
+          for: 30m
+          labels:
+            severity: warning
+            category: personal_finance
+          annotations:
+            summary: "Euribor 12M above your threshold"
+            description: "Euribor 12M is at {{ $value | humanize }}%, above your 2.4% monitoring threshold. Consider your refinancing options."
+
+        # Critical threshold
+        - alert: Euribor12MCritical
+          expr: max by(maturity) (euribor_rate_percent{maturity="12M"}) > 2.6
+          for: 30m
+          labels:
+            severity: critical
+            category: personal_finance
+          annotations:
+            summary: "Euribor 12M critically high"
+            description: "Euribor 12M reached {{ $value | humanize }}%! Your mortgage costs are significantly impacted."
+    - name: euribor_market_conditions
+      interval: 5m
+      rules:
+        # ========================================================================
+        # MARKET CONDITION ALERTS
+        # ========================================================================
+
+        # Yield curve inversion
+        - alert: EuriborYieldCurveInverted
+          expr: |
+            max by(maturity) (euribor_rate_percent{maturity="3M"})
+            >
+            max by(maturity) (euribor_rate_percent{maturity="12M"})
+          for: 2h
+          labels:
+            severity: info
+            category: market_conditions
+          annotations:
+            summary: "Euribor yield curve inverted"
+            description: "3M rate ({{ with query \"max by(maturity) (euribor_rate_percent{maturity='3M'})\" }}{{ . | first | value | humanize }}{{ end }}%) exceeds 12M rate ({{ with query \"max by(maturity) (euribor_rate_percent{maturity='12M'})\" }}{{ . | first | value | humanize }}{{ end }}%). This may signal economic concerns."
+
+        # Unusual spread between maturities
+        - alert: EuriborSpreadUnusual
+          expr: |
+            abs(
+              max by(maturity) (euribor_rate_percent{maturity="12M"})
+              -
+              max by(maturity) (euribor_rate_percent{maturity="3M"})
+            ) > 0.5
+          for: 6h
+          labels:
+            severity: info
+            category: market_conditions
+          annotations:
+            summary: "Unusual spread between 3M and 12M Euribor"
+            description: "The spread is {{ $value | humanize }}%, which is unusually high. 3M: {{ with query \"max by(maturity) (euribor_rate_percent{maturity='3M'})\" }}{{ . | first | value }}{{ end }}%, 12M: {{ with query \"max by(maturity) (euribor_rate_percent{maturity='12M'})\" }}{{ . | first | value }}{{ end }}%"
+
+        - alert: EuriborDownwardTrend
+          expr: |
+            (
+              avg_over_time(euribor_rate_percent{maturity="12M"}[7d])
+              -
+              avg_over_time(euribor_rate_percent{maturity="12M"}[7d] offset 7d)
+            ) < -0.05
+          for: 24h
+          labels:
+            severity: info
+            category: market_conditions
+          annotations:
+            summary: "Sustained downward trend in 12M Euribor"
+            description: |
+              7-day average is declining consistently.
+              This suggests ECB may continue lowering rates
