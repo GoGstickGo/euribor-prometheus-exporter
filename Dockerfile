@@ -18,7 +18,10 @@ COPY . .
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-w -s" \
+    -ldflags="-w -s \
+      -X main.version=${VERSION} \
+      -X main.commit=${COMMIT} \
+      -X main.date=${BUILD_DATE}" \
     -o euribor-exporter \
     main.go
 
