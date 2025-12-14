@@ -868,5 +868,5 @@ data:
       "timezone": "",
       "title": "Euribor Rates Monitor",
       "uid": "euribor-rates",
-      "version": 2
+      "version": 4
     }
