@@ -23,6 +23,12 @@ const (
 )
 
 var (
+	version = "dev" // Default for local builds
+	commit  = "none"
+	date    = "unknown"
+)
+
+var (
 	log = logrus.New()
 
 	// Command-line flags
@@ -46,6 +52,15 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "last_update_timestamp",
+			Help:      "Timestamp of last successful Euribor data fetch",
+		},
+		[]string{"maturity"},
+	)
+
+	euriborPubDate = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "last_publication_date",
 			Help:      "Timestamp of last successful Euribor data fetch",
 		},
 		[]string{"maturity"},
@@ -132,10 +147,10 @@ func NewEuriborExporter() *EuriborExporter {
 }
 
 // FetchRate fetches the Euribor rate for a specific maturity from ECB
-func (e *EuriborExporter) FetchRate(maturity string) (float64, error) {
+func (e *EuriborExporter) FetchRate(maturity string) (float64, time.Time, error) {
 	maturityCode, exists := maturities[maturity]
 	if !exists {
-		return 0, fmt.Errorf("invalid maturity: %s", maturity)
+		return 0, time.Time{}, fmt.Errorf("invalid maturity: %s", maturity)
 	}
 
 	// Build the query
@@ -149,36 +164,36 @@ func (e *EuriborExporter) FetchRate(maturity string) (float64, error) {
 
 	resp, err := e.client.Get(url)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch data: %w", err)
+		return 0, time.Time{}, fmt.Errorf("failed to fetch data: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("ECB API returned status %d", resp.StatusCode)
+		return 0, time.Time{}, fmt.Errorf("ECB API returned status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read response: %w", err)
+		return 0, time.Time{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var ecbResp ECBResponse
 	if err := json.Unmarshal(body, &ecbResp); err != nil {
-		return 0, fmt.Errorf("failed to parse JSON: %w", err)
+		return 0, time.Time{}, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
 	// Extract the rate from the response
 	if len(ecbResp.DataSets) == 0 {
-		return 0, fmt.Errorf("no datasets in response")
+		return 0, time.Time{}, fmt.Errorf("no datasets in response")
 	}
 
 	series, exists := ecbResp.DataSets[0].Series["0:0:0:0:0:0:0"]
 	if !exists {
-		return 0, fmt.Errorf("series not found in response")
+		return 0, time.Time{}, fmt.Errorf("series not found in response")
 	}
 
 	if len(series.Observations) == 0 {
-		return 0, fmt.Errorf("no observations in series")
+		return 0, time.Time{}, fmt.Errorf("no observations in series")
 	}
 
 	// Find the latest observation
@@ -191,16 +206,36 @@ func (e *EuriborExporter) FetchRate(maturity string) (float64, error) {
 
 	observations := series.Observations[latestKey]
 	if len(observations) == 0 {
-		return 0, fmt.Errorf("observation is empty")
+		return 0, time.Time{}, fmt.Errorf("observation is empty")
 	}
 
 	rate := observations[0]
-	log.WithFields(logrus.Fields{
-		"maturity": maturity,
-		"rate":     rate,
-	}).Info("Successfully fetched Euribor rate")
 
-	return rate, nil
+	pubDate := time.Now() // Default to current time
+
+	if len(ecbResp.Structure.Dimensions.Observation) > 0 {
+		timeDim := ecbResp.Structure.Dimensions.Observation[0]
+		if len(timeDim.Values) > 0 {
+			// ECB returns dates like "2024-12-13"
+			dateStr := timeDim.Values[0].ID
+			parsed, err := time.Parse("2006-01", dateStr)
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					"maturity": maturity,
+					"date_str": dateStr,
+					"error":    err,
+				}).Warn("Failed to parse ECB publication date, using current time")
+			} else {
+				pubDate = parsed
+				log.WithFields(logrus.Fields{
+					"maturity": maturity,
+					"pub_date": pubDate.Format("2006-01"),
+				}).Debug("Parsed ECB publication date")
+			}
+		}
+	}
+
+	return rate, pubDate, nil
 }
 
 // UpdateMetrics fetches latest rates and updates Prometheus metrics
@@ -208,7 +243,7 @@ func (e *EuriborExporter) UpdateMetrics() {
 	for maturity := range maturities {
 		startTime := time.Now()
 
-		rate, err := e.FetchRate(maturity)
+		rate, pubDate, err := e.FetchRate(maturity)
 		duration := time.Since(startTime).Seconds()
 
 		euriborScrapeDuration.WithLabelValues(maturity).Set(duration)
@@ -217,6 +252,7 @@ func (e *EuriborExporter) UpdateMetrics() {
 			log.WithFields(logrus.Fields{
 				"maturity": maturity,
 				"error":    err,
+				"pub_date": pubDate,
 			}).Error("Failed to fetch Euribor rate")
 			euriborScrapeSuccess.WithLabelValues(maturity).Set(0)
 			continue
@@ -226,11 +262,13 @@ func (e *EuriborExporter) UpdateMetrics() {
 		euriborRate.WithLabelValues(maturity).Set(rate)
 		euriborLastUpdate.WithLabelValues(maturity).Set(float64(time.Now().Unix()))
 		euriborScrapeSuccess.WithLabelValues(maturity).Set(1)
+		euriborPubDate.WithLabelValues(maturity).Set(float64(pubDate.Unix()))
 
 		log.WithFields(logrus.Fields{
 			"maturity": maturity,
 			"rate":     rate,
 			"duration": duration,
+			"pub_date": pubDate,
 		}).Info("Updated Euribor metric")
 	}
 }
@@ -263,9 +301,10 @@ func init() {
 	prometheus.MustRegister(euriborScrapeDuration)
 	prometheus.MustRegister(euriborScrapeSuccess)
 	prometheus.MustRegister(euriborInfo)
+	prometheus.MustRegister(euriborPubDate)
 
 	// Set exporter info
-	euriborInfo.WithLabelValues("1.0.0", "ECB Statistical Data Warehouse").Set(1)
+	euriborInfo.WithLabelValues(version, "ECB Statistical Data Warehouse").Set(1)
 
 	// Configure logging
 	log.SetFormatter(&logrus.TextFormatter{

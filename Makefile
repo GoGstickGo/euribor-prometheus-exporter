@@ -3,7 +3,7 @@
 # Build variables
 BINARY_NAME=euribor-exporter
 DOCKER_IMAGE=euribor-exporter
-VERSION?=0.2.0
+VERSION= $(shell cat version.txt | tr -d '\n')
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -70,7 +70,13 @@ clean:
 
 docker-build:
 	@echo "Building Docker image..."
-	docker build -t $(DOCKER_IMAGE):$(VERSION) -t $(DOCKER_IMAGE):latest .
+	docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_DATE=$(DATE) \
+		-t $(DOCKER_IMAGE):$(VERSION) \
+		-t $(DOCKER_IMAGE):latest .
+
 
 docker-run:
 	@echo "Running Docker container..."
