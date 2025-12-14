@@ -42,11 +42,11 @@
               },
               {
                 "color": "yellow",
-                "value": 2
+                "value": 2.35
               },
               {
                 "color": "red",
-                "value": 3
+                "value": 2.4
               }
             ]
           },
@@ -289,7 +289,8 @@
           "refId": "D"
         }
       ],
-      "title": "Euribor Rate Trends (Last 30 Days)",
+      "timeFrom": "14d",
+      "title": "Euribor Rate Trends (Last 14 days)",
       "type": "timeseries"
     },
     {
@@ -726,5 +727,5 @@
   "timezone": "",
   "title": "Euribor Rates Monitor",
   "uid": "euribor-rates",
-  "version": 1
+  "version": 2
 }
