@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/GoGstickGo/euribor-exporter/scraper"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
@@ -92,6 +93,42 @@ var (
 		},
 		[]string{"version", "source"},
 	)
+
+	euriborDailyRate = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "daily_rate_percent",
+			Help:      "Daily Euribor rate in percent (scraped from euribor-rates.eu)",
+		},
+		[]string{"maturity"},
+	)
+
+	euriborDailyPublicationDate = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "daily_publication_date_timestamp",
+			Help:      "ECB publication date of the daily Euribor rate (Unix timestamp)",
+		},
+		[]string{"maturity"},
+	)
+
+	euriborDailyScrapeSuccess = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "daily_scrape_success",
+			Help:      "Whether the last daily scrape was successful (1 = success, 0 = failure)",
+		},
+		[]string{"maturity"},
+	)
+
+	euriborDailyScrapeDuration = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "daily_scrape_duration_seconds",
+			Help:      "Duration of daily Euribor scrape in seconds",
+		},
+		[]string{"maturity"},
+	)
 )
 
 // Maturity codes mapping
@@ -132,22 +169,26 @@ type DimensionValue struct {
 	ID string `json:"id"`
 }
 
-// EuriborExporter handles fetching and exposing Euribor rates
+// EuriborExporter handles fetching and exposing Euribor rates from multiple sources
 type EuriborExporter struct {
-	client *http.Client
+	client     *http.Client
+	scraper    *scraper.Scraper
+	ecbEnabled bool // Flag to enable/disable ECB source
 }
 
 // NewEuriborExporter creates a new exporter instance
-func NewEuriborExporter() *EuriborExporter {
+func NewEuriborExporter(enableECB bool) *EuriborExporter {
 	return &EuriborExporter{
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		scraper:    scraper.New(log),
+		ecbEnabled: enableECB,
 	}
 }
 
-// FetchRate fetches the Euribor rate for a specific maturity from ECB
-func (e *EuriborExporter) FetchRate(maturity string) (float64, time.Time, error) {
+// FetchRateFromECB fetches the Euribor rate from ECB API (monthly data)
+func (e *EuriborExporter) FetchRateFromECB(maturity string) (float64, time.Time, error) {
 	maturityCode, exists := maturities[maturity]
 	if !exists {
 		return 0, time.Time{}, fmt.Errorf("invalid maturity: %s", maturity)
@@ -211,13 +252,17 @@ func (e *EuriborExporter) FetchRate(maturity string) (float64, time.Time, error)
 
 	rate := observations[0]
 
+	// Parse publication date (monthly format: "2025-11")
 	pubDate := time.Now() // Default to current time
 
 	if len(ecbResp.Structure.Dimensions.Observation) > 0 {
 		timeDim := ecbResp.Structure.Dimensions.Observation[0]
 		if len(timeDim.Values) > 0 {
-			// ECB returns dates like "2024-12-13"
-			dateStr := timeDim.Values[0].ID
+			// Get the last value (most recent)
+			latestIdx := len(timeDim.Values) - 1
+			dateStr := timeDim.Values[latestIdx].ID
+
+			// ECB monthly data returns "2025-11" format
 			parsed, err := time.Parse("2006-01", dateStr)
 			if err != nil {
 				log.WithFields(logrus.Fields{
@@ -226,7 +271,9 @@ func (e *EuriborExporter) FetchRate(maturity string) (float64, time.Time, error)
 					"error":    err,
 				}).Warn("Failed to parse ECB publication date, using current time")
 			} else {
-				pubDate = parsed
+				// Set to last day of the month for more accuracy
+				pubDate = time.Date(parsed.Year(), parsed.Month()+1, 0, 0, 0, 0, 0, time.UTC)
+
 				log.WithFields(logrus.Fields{
 					"maturity": maturity,
 					"pub_date": pubDate.Format("2006-01"),
@@ -238,39 +285,104 @@ func (e *EuriborExporter) FetchRate(maturity string) (float64, time.Time, error)
 	return rate, pubDate, nil
 }
 
-// UpdateMetrics fetches latest rates and updates Prometheus metrics
+// FetchRateFromWeb fetches the Euribor rate from web scraper (daily data)
+func (e *EuriborExporter) FetchRateFromWeb(maturity string) (float64, time.Time, error) {
+	data, err := e.scraper.FetchRate(maturity)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+
+	return data.Rate, data.PublicationDate, nil
+}
+
+// UpdateMetrics fetches latest rates from both sources and updates Prometheus metrics
 func (e *EuriborExporter) UpdateMetrics() {
-	for maturity := range maturities {
-		startTime := time.Now()
+	maturitiesList := scraper.GetSupportedMaturities()
 
-		rate, pubDate, err := e.FetchRate(maturity)
-		duration := time.Since(startTime).Seconds()
+	for _, maturity := range maturitiesList {
+		// Fetch from daily web scraper
+		e.updateDailyMetrics(maturity)
 
-		euriborScrapeDuration.WithLabelValues(maturity).Set(duration)
-
-		if err != nil {
-			log.WithFields(logrus.Fields{
-				"maturity": maturity,
-				"error":    err,
-				"pub_date": pubDate,
-			}).Error("Failed to fetch Euribor rate")
-			euriborScrapeSuccess.WithLabelValues(maturity).Set(0)
-			continue
+		// Fetch from ECB (monthly) if enabled
+		if e.ecbEnabled {
+			e.updateECBMetrics(maturity)
 		}
+	}
+}
 
-		// Update metrics
-		euriborRate.WithLabelValues(maturity).Set(rate)
-		euriborLastUpdate.WithLabelValues(maturity).Set(float64(time.Now().Unix()))
-		euriborScrapeSuccess.WithLabelValues(maturity).Set(1)
-		euriborPubDate.WithLabelValues(maturity).Set(float64(pubDate.Unix()))
+// updateDailyMetrics fetches and updates daily scraped metrics
+func (e *EuriborExporter) updateDailyMetrics(maturity string) {
+	startTime := time.Now()
 
+	rate, pubDate, err := e.FetchRateFromWeb(maturity)
+	duration := time.Since(startTime).Seconds()
+
+	euriborDailyScrapeDuration.WithLabelValues(maturity).Set(duration)
+
+	if err != nil {
 		log.WithFields(logrus.Fields{
 			"maturity": maturity,
-			"rate":     rate,
-			"duration": duration,
-			"pub_date": pubDate,
-		}).Info("Updated Euribor metric")
+			"source":   "daily-scraper",
+			"error":    err,
+		}).Error("Failed to fetch daily Euribor rate")
+		euriborDailyScrapeSuccess.WithLabelValues(maturity).Set(0)
+		return
 	}
+
+	// Update daily metrics
+	euriborDailyRate.WithLabelValues(maturity).Set(rate)
+	euriborDailyPublicationDate.WithLabelValues(maturity).Set(float64(pubDate.Unix()))
+	euriborDailyScrapeSuccess.WithLabelValues(maturity).Set(1)
+
+	log.WithFields(logrus.Fields{
+		"maturity": maturity,
+		"source":   "daily-scraper",
+		"rate":     rate,
+		"pub_date": pubDate.Format("2006-01-02"),
+		"duration": duration,
+	}).Info("Updated daily Euribor metric")
+}
+
+// updateECBMetrics fetches and updates ECB monthly metrics
+func (e *EuriborExporter) updateECBMetrics(maturity string) {
+	// Only fetch ECB data if maturity exists in maturities map
+	if _, exists := maturities[maturity]; !exists {
+		log.WithFields(logrus.Fields{
+			"maturity": maturity,
+			"source":   "ecb",
+		}).Debug("Skipping ECB fetch - maturity not supported by ECB API")
+		return
+	}
+
+	startTime := time.Now()
+
+	rate, pubDate, err := e.FetchRateFromECB(maturity)
+	duration := time.Since(startTime).Seconds()
+
+	euriborScrapeDuration.WithLabelValues(maturity).Set(duration)
+
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"maturity": maturity,
+			"source":   "ecb",
+			"error":    err,
+		}).Error("Failed to fetch ECB Euribor rate")
+		euriborScrapeSuccess.WithLabelValues(maturity).Set(0)
+		return
+	}
+
+	// Update ECB metrics
+	euriborRate.WithLabelValues(maturity).Set(rate)
+	euriborPubDate.WithLabelValues(maturity).Set(float64(pubDate.Unix()))
+	euriborScrapeSuccess.WithLabelValues(maturity).Set(1)
+
+	log.WithFields(logrus.Fields{
+		"maturity": maturity,
+		"source":   "ecb",
+		"rate":     rate,
+		"pub_date": pubDate.Format("2006-01-02"),
+		"duration": duration,
+	}).Info("Updated ECB Euribor metric")
 }
 
 // Run starts the periodic metric updates
@@ -303,8 +415,13 @@ func init() {
 	prometheus.MustRegister(euriborInfo)
 	prometheus.MustRegister(euriborPubDate)
 
+	prometheus.MustRegister(euriborDailyRate)
+	prometheus.MustRegister(euriborDailyPublicationDate)
+	prometheus.MustRegister(euriborDailyScrapeSuccess)
+	prometheus.MustRegister(euriborDailyScrapeDuration)
+
 	// Set exporter info
-	euriborInfo.WithLabelValues(version, "ECB Statistical Data Warehouse").Set(1)
+	euriborInfo.WithLabelValues(version, "dual-source: ECB + daily scraper").Set(1)
 
 	// Configure logging
 	log.SetFormatter(&logrus.TextFormatter{
@@ -323,14 +440,19 @@ func main() {
 		}
 	}
 
+	// Check if ECB source should be enabled (default: true for backward compatibility)
+	enableECB := os.Getenv("ENABLE_ECB") != "false"
+
 	log.WithFields(logrus.Fields{
+		"version":         version,
 		"listen_address":  *listenAddress,
 		"metrics_path":    *metricsPath,
 		"scrape_interval": *scrapeInterval,
+		"ecb_enabled":     enableECB,
 	}).Info("Starting Euribor Prometheus Exporter")
 
 	// Create exporter
-	exporter := NewEuriborExporter()
+	exporter := NewEuriborExporter(enableECB)
 
 	// Setup signal handling for graceful shutdown
 	stopCh := make(chan struct{})
