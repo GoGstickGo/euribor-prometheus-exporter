@@ -25,8 +25,6 @@ const (
 
 var (
 	version = "dev" // Default for local builds
-	commit  = "none"
-	date    = "unknown"
 )
 
 var (
