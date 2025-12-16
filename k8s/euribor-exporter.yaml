@@ -26,7 +26,7 @@ spec:
     metadata:
       labels:
         app: euribor-exporter
-        version: v0.1.0
+        version: v0.2.0
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9100"
@@ -34,7 +34,7 @@ spec:
     spec:
       containers:
       - name: euribor-exporter
-        image: euribor-exporter:0.1.0  # Local image imported to k3d
+        image: euribor-exporter:0.2.0  # Local image imported to k3d
         imagePullPolicy: Never  # Don't try to pull from registry
         ports:
         - name: metrics
@@ -172,6 +172,80 @@ data:
               "color": {
                 "mode": "thresholds"
               },
+              "decimals": 4,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.05
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by(maturity) (euribor_daily_rate_percent) - max by(maturity) (euribor_daily_rate_percent offset 24h)",
+              "legendFormat": "{{maturity}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Rate Change (24h)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
               "decimals": 3,
               "mappings": [],
               "thresholds": {
@@ -183,11 +257,11 @@ data:
                   },
                   {
                     "color": "yellow",
-                    "value": 2.35
+                    "value": 2.3
                   },
                   {
                     "color": "red",
-                    "value": 2.4
+                    "value": 2.5
                   }
                 ]
               },
@@ -199,12 +273,86 @@ data:
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 0
+            "y": 4
           },
           "id": 1,
           "options": {
             "colorMode": "value",
-            "graphMode": "area",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by(maturity) (euribor_daily_rate_percent)",
+              "legendFormat": "{{maturity}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Current Euribor Rates",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 3,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 2.3
+                  },
+                  {
+                    "color": "red",
+                    "value": 2.5
+                  }
+                ]
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 12
+          },
+          "id": 11,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
             "justifyMode": "auto",
             "orientation": "auto",
             "percentChangeColorMode": "standard",
@@ -233,7 +381,7 @@ data:
               "refId": "A"
             }
           ],
-          "title": "Current Euribor Rates",
+          "title": "ECB Euribor Rates",
           "type": "stat"
         },
         {
@@ -360,7 +508,7 @@ data:
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 8
+            "y": 20
           },
           "id": 2,
           "options": {
@@ -388,7 +536,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "max by(maturity) (euribor_rate_percent{maturity=\"1M\"})",
+              "expr": "max by(maturity) (euribor_daily_rate_percent{maturity=\"1M\"})",
               "legendFormat": "1M",
               "range": true,
               "refId": "A"
@@ -399,7 +547,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "max by(maturity) (euribor_rate_percent{maturity=\"3M\"})",
+              "expr": "max by(maturity) (euribor_daily_rate_percent{maturity=\"3M\"})",
               "hide": false,
               "legendFormat": "3M",
               "range": true,
@@ -411,7 +559,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "max by(maturity) (euribor_rate_percent{maturity=\"6M\"})",
+              "expr": "max by(maturity) (euribor_daily_rate_percent{maturity=\"6M\"})",
               "hide": false,
               "legendFormat": "6M",
               "range": true,
@@ -423,311 +571,16 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "max by(maturity) (euribor_rate_percent{maturity=\"12M\"})",
+              "expr": "max by(maturity) (euribor_daily_rate_percent{maturity=\"12M\"})",
               "hide": false,
               "legendFormat": "12M",
               "range": true,
               "refId": "D"
             }
           ],
-          "timeFrom": "14d",
-          "title": "Euribor Rate Trends (Last 14 days)",
+          "timeFrom": "7d",
+          "title": "Euribor Rate Trends (Last 7 Days)",
           "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "decimals": 4,
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 0.05
-                  }
-                ]
-              },
-              "unit": "percent"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 6,
-            "w": 12,
-            "x": 0,
-            "y": 18
-          },
-          "id": 3,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "12.3.0",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "code",
-              "expr": "max by(maturity) (euribor_rate_percent) - max by(maturity) (euribor_rate_percent offset 24h)",
-              "legendFormat": "{{maturity}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Rate Change (24h)",
-          "type": "stat"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [
-                {
-                  "options": {
-                    "0": {
-                      "color": "red",
-                      "index": 1,
-                      "text": "Failed"
-                    },
-                    "1": {
-                      "color": "green",
-                      "index": 0,
-                      "text": "Success"
-                    }
-                  },
-                  "type": "value"
-                }
-              ],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "red",
-                    "value": 0
-                  },
-                  {
-                    "color": "green",
-                    "value": 1
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 6,
-            "w": 12,
-            "x": 12,
-            "y": 18
-          },
-          "id": 4,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "12.3.0",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "code",
-              "expr": "max by(maturity) (euribor_scrape_success)",
-              "legendFormat": "{{maturity}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Scrape Status",
-          "type": "stat"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 6,
-            "w": 12,
-            "x": 0,
-            "y": 24
-          },
-          "id": 7,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "12.3.0",
-          "targets": [
-            {
-              "editorMode": "code",
-              "expr": "(time() - max by(maturity) (euribor_last_publication_date)) / 86400",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Number of days since publication date",
-          "type": "stat"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 3600
-                  },
-                  {
-                    "color": "red",
-                    "value": 7200
-                  }
-                ]
-              },
-              "unit": "dateTimeFromNow"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 6,
-            "w": 12,
-            "x": 12,
-            "y": 24
-          },
-          "id": 6,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "12.3.0",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "code",
-              "expr": "max by(maturity) (euribor_last_update_timestamp) * 1000",
-              "legendFormat": "{{maturity}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Last Update Time",
-          "type": "stat"
         },
         {
           "datasource": {
@@ -793,6 +646,348 @@ data:
             "x": 0,
             "y": 30
           },
+          "id": 9,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by(maturity) (euribor_daily_scrape_duration_seconds)",
+              "legendFormat": "{{maturity}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Scrape Duration",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "red",
+                      "index": 1,
+                      "text": "Failed"
+                    },
+                    "1": {
+                      "color": "green",
+                      "index": 0,
+                      "text": "Success"
+                    }
+                  },
+                  "type": "value"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": 0
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 30
+          },
+          "id": 8,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by(maturity) (euribor_daily_scrape_success)",
+              "legendFormat": "{{maturity}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Scrape Status",
+          "type": "stat"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 36
+          },
+          "id": 10,
+          "options": {
+            "code": {
+              "language": "plaintext",
+              "showLineNumbers": false,
+              "showMiniMap": false
+            },
+            "content": "# ECB\n",
+            "mode": "markdown"
+          },
+          "pluginVersion": "12.3.0",
+          "title": "",
+          "transparent": true,
+          "type": "text"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 40
+          },
+          "id": 7,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "(time() - max by(maturity) (euribor_last_publication_date)) / 86400",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Number of days since publication date (ECB)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 3600
+                  },
+                  {
+                    "color": "red",
+                    "value": 7200
+                  }
+                ]
+              },
+              "unit": "dateTimeFromNow"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 40
+          },
+          "id": 6,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by(maturity) (euribor_last_update_timestamp) * 1000",
+              "legendFormat": "{{maturity}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Last Update Time (ECB)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "showValues": false,
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": 0
+                  }
+                ]
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
           "id": 5,
           "options": {
             "legend": {
@@ -821,8 +1016,92 @@ data:
               "refId": "A"
             }
           ],
-          "title": "Scrape Duration",
+          "title": "Scrape Duration (ECB)",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "red",
+                      "index": 1,
+                      "text": "Failed"
+                    },
+                    "1": {
+                      "color": "green",
+                      "index": 0,
+                      "text": "Success"
+                    }
+                  },
+                  "type": "value"
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": 0
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 46
+          },
+          "id": 4,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "percentChangeColorMode": "standard",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showPercentChange": false,
+            "textMode": "auto",
+            "wideLayout": true
+          },
+          "pluginVersion": "12.3.0",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "max by(maturity) (euribor_scrape_success)",
+              "legendFormat": "{{maturity}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Scrape Status (ECB)",
+          "type": "stat"
         }
       ],
       "preload": false,
@@ -868,5 +1147,5 @@ data:
       "timezone": "",
       "title": "Euribor Rates Monitor",
       "uid": "euribor-rates",
-      "version": 4
+      "version": 3
     }

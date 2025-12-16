@@ -12,13 +12,15 @@ spec:
       interval: 5m
       rules:
         # ========================================================================
-        # RATE CHANGE ALERTS
+        # RATE CHANGE ALERTS (Using Daily Scraped Data)
         # ========================================================================
+        
+        # Moderate rate increase (6 hour window)
         - alert: EuriborRateIncreaseModerate
           expr: |
             (
-              max by(maturity) (euribor_rate_percent)
-              - max by(maturity) (euribor_rate_percent offset 6h)
+              max by(maturity) (euribor_daily_rate_percent)
+              - max by(maturity) (euribor_daily_rate_percent offset 6h)
             ) > 0.05
           for: 5m
           labels:
@@ -26,14 +28,14 @@ spec:
             category: finance
           annotations:
             summary: "Euribor {{ $labels.maturity }} increased moderately"
-            description: "{{ $labels.maturity }} increased by {{ $value | humanize }}% in the last 6 hours. Current rate: {{ with query \"max by(maturity) (euribor_rate_percent{maturity='\" }}{{ . | first | value | humanize }}{{ end }}%"
+            description: "{{ $labels.maturity }} increased by {{ $value | humanize }}% in the last 6 hours. Current rate: {{ with query \"max by(maturity) (euribor_daily_rate_percent{maturity='\" }}{{ . | first | value | humanize }}{{ end }}%"
 
         # Major rate increase (critical)
         - alert: EuriborRateIncreaseMajor
           expr: |
             (
-              max by(maturity) (euribor_rate_percent)
-              - max by(maturity) (euribor_rate_percent offset 6h)
+              max by(maturity) (euribor_daily_rate_percent)
+              - max by(maturity) (euribor_daily_rate_percent offset 6h)
             ) > 0.15
           for: 5m
           labels:
@@ -43,12 +45,12 @@ spec:
             summary: "Euribor {{ $labels.maturity }} increased significantly!"
             description: "MAJOR CHANGE: {{ $labels.maturity }} increased by {{ $value | humanize }}% in 6 hours. This is unusual and may indicate market stress."
 
-        # Rate increase alert (12M specific)
+        # Rate increase alert (12M specific - 7 day trend)
         - alert: Euribor12MIncreased
           expr: |
             (
-              max by(maturity) (euribor_rate_percent{maturity="12M"})
-              - max by(maturity) (euribor_rate_percent{maturity="12M"} offset 7d)
+              max by(maturity) (euribor_daily_rate_percent{maturity="12M"})
+              - max by(maturity) (euribor_daily_rate_percent{maturity="12M"} offset 7d)
             ) > 0.1
           for: 1h
           labels:
@@ -58,13 +60,14 @@ spec:
             summary: "12M Euribor increased by {{ $value | humanize }}% this week"
             description: |
               Your mortgage reference rate increased by {{ $value | humanize }}% in the last 7 days.
+              Current rate: {{ with query "max by(maturity) (euribor_daily_rate_percent{maturity='12M'})" }}{{ . | first | value | humanize }}{{ end }}%
 
-        # Rate decrease (good news, lower severity)
+        # Rate decrease (good news)
         - alert: EuriborRateDecrease
           expr: |
             (
-              max by(maturity) (euribor_rate_percent)
-              - max by(maturity) (euribor_rate_percent offset 6h)
+              max by(maturity) (euribor_daily_rate_percent)
+              - max by(maturity) (euribor_daily_rate_percent offset 6h)
             ) < -0.05
           for: 5m
           labels:
@@ -78,86 +81,125 @@ spec:
       interval: 1m
       rules:
         # ========================================================================
-        # EXPORTER HEALTH ALERTS
+        # EXPORTER HEALTH ALERTS (Daily Scraper)
         # ========================================================================
 
         # Individual maturity scrape failure
-        - alert: EuriborScrapeFailed
-          expr: max by(maturity) (euribor_scrape_success) == 0
+        - alert: EuriborDailyScrapeFailed
+          expr: max by(maturity) (euribor_daily_scrape_success) == 0
           for: 5m
           labels:
             severity: warning
             category: monitoring
           annotations:
-            summary: "Euribor scrape failed for {{ $labels.maturity }}"
-            description: "Failed to scrape {{ $labels.maturity }} Euribor rate for 5 minutes. Check exporter logs: kubectl logs -n monitoring deployment/euribor-exporter"
+            summary: "Daily Euribor scrape failed for {{ $labels.maturity }}"
+            description: "Failed to scrape {{ $labels.maturity }} Euribor rate for 5 minutes. Check exporter logs: kubectl logs -n monitoring deployment/euribor-exporter-daily"
 
-        # Complete exporter failure (more serious)
-        - alert: EuriborExporterDown
+        # Complete exporter failure
+        - alert: EuriborDailyExporterDown
           expr: |
-            sum(euribor_scrape_success) == 0
+            sum(euribor_daily_scrape_success) == 0
             or
-            absent(euribor_scrape_success)
+            absent(euribor_daily_scrape_success)
           for: 5m
           labels:
             severity: critical
             category: monitoring
           annotations:
-            summary: "Euribor exporter completely down"
-            description: "All Euribor rates failing or exporter is down. Check pod: kubectl get pods -n monitoring -l app=euribor-exporter"
-            runbook: "kubectl logs -n monitoring deployment/euribor-exporter"
+            summary: "Daily Euribor exporter completely down"
+            description: "All daily Euribor rates failing or exporter is down. Check pod: kubectl get pods -n monitoring -l app=euribor-exporter"
+            runbook: "kubectl logs -n monitoring deployment/euribor-exporter-daily"
 
-        # Data staleness (accounts for business days)
-        - alert: EuriborDataStale
+        # Data staleness (2 business days = 48h + buffer)
+        - alert: EuriborDailyDataStale
           expr: |
-            (time() - max by(maturity) (euribor_last_update_timestamp)) > 7200
-          for: 10m
+            (time() - max by(maturity) (euribor_daily_publication_date_timestamp)) > 259200
+          for: 1h
           labels:
             severity: warning
             category: monitoring
           annotations:
-            summary: "Euribor data stale for {{ $labels.maturity }}"
-            description: "{{ $labels.maturity }} hasn't updated in {{ $value | humanizeDuration }}. ECB publishes daily at ~11:00 CET on business days. Check if today is a weekend/holiday."
+            summary: "Euribor daily data stale for {{ $labels.maturity }}"
+            description: "{{ $labels.maturity }} publication date is >3 days old. Last update: {{ $value | humanizeDuration }} ago. ECB publishes daily on business days only."
 
         # Scrape duration too long
-        - alert: EuriborScrapeSlow
-          expr: max by(maturity) (euribor_scrape_duration_seconds) > 10
+        - alert: EuriborDailyScrapeSlow
+          expr: max by(maturity) (euribor_daily_scrape_duration_seconds) > 10
           for: 15m
           labels:
             severity: info
             category: performance
           annotations:
-            summary: "Euribor scrape is slow"
-            description: "Scraping {{ $labels.maturity }} is taking {{ $value }}s, which is unusually long. ECB API may be slow."
+            summary: "Daily Euribor scrape is slow"
+            description: "Scraping {{ $labels.maturity }} is taking {{ $value }}s. Website may be slow or experiencing issues."
+
+        # Scraper hasn't run recently (should run every hour)
+        - alert: EuriborDailyScraperNotRunning
+          expr: |
+            (time() - max by(maturity) (euribor_daily_publication_date_timestamp)) > 7200
+            and
+            max by(maturity) (euribor_daily_scrape_success) == 1
+          for: 30m
+          labels:
+            severity: warning
+            category: monitoring
+          annotations:
+            summary: "Daily scraper hasn't updated {{ $labels.maturity }} recently"
+            description: "Last successful scrape was >2h ago but scraper shows success. Check scrape interval configuration."
 
     - name: euribor_thresholds
       interval: 5m
       rules:
         # ========================================================================
-        # PERSONAL FINANCE THRESHOLDS
+        # PERSONAL FINANCE THRESHOLDS (12M - Your Mortgage Rate)
         # ========================================================================
 
-        # Absolute rate threshold (12M - your main rate)
+        # Absolute rate threshold
         - alert: Euribor12MAboveThreshold
-          expr: max by(maturity) (euribor_rate_percent{maturity="12M"}) > 2.4
+          expr: max by(maturity) (euribor_daily_rate_percent{maturity="12M"}) > 2.4
           for: 30m
           labels:
             severity: warning
             category: personal_finance
           annotations:
             summary: "Euribor 12M above your threshold"
-            description: "Euribor 12M is at {{ $value | humanize }}%, above your 2.4% monitoring threshold. Consider your refinancing options."
+            description: |
+              Euribor 12M is at {{ $value | humanize }}%, above your 2.4% monitoring threshold.
+              
+              Consider:
+              - Reviewing your budget for higher payments
+              - Checking fixed-rate mortgage offers
+              - Consulting with your bank about options
 
         # Critical threshold
         - alert: Euribor12MCritical
-          expr: max by(maturity) (euribor_rate_percent{maturity="12M"}) > 2.6
+          expr: max by(maturity) (euribor_daily_rate_percent{maturity="12M"}) > 2.6
           for: 30m
           labels:
             severity: critical
             category: personal_finance
           annotations:
             summary: "Euribor 12M critically high"
-            description: "Euribor 12M reached {{ $value | humanize }}%! Your mortgage costs are significantly impacted."
+            description: |
+              ⚠️ Euribor 12M reached {{ $value | humanize }}%!
+              
+              Your mortgage costs are significantly impacted.
+              Consider immediate action to lock in rates.
+
+        # Approaching renewal with high rate
+        - alert: Euribor12MHighBeforeRenewal
+          expr: max by(maturity) (euribor_daily_rate_percent{maturity="12M"}) > 2.8
+          for: 1h
+          labels:
+            severity: critical
+            category: personal_mortgage
+          annotations:
+            summary: "12M Euribor very high ({{ $value | humanize }}%)"
+            description: |
+              If your mortgage is renewing soon, this rate will significantly increase your payments.
+              
+              Action: Consider fixing your rate NOW before renewal.
+
     - name: euribor_market_conditions
       interval: 5m
       rules:
@@ -165,27 +207,31 @@ spec:
         # MARKET CONDITION ALERTS
         # ========================================================================
 
-        # Yield curve inversion
+        # Yield curve inversion (signals potential rate cuts)
         - alert: EuriborYieldCurveInverted
           expr: |
-            max by(maturity) (euribor_rate_percent{maturity="3M"})
+            max(euribor_daily_rate_percent{maturity="3M"})
             >
-            max by(maturity) (euribor_rate_percent{maturity="12M"})
+            max(euribor_daily_rate_percent{maturity="12M"})
           for: 2h
           labels:
             severity: info
             category: market_conditions
           annotations:
             summary: "Euribor yield curve inverted"
-            description: "3M rate ({{ with query \"max by(maturity) (euribor_rate_percent{maturity='3M'})\" }}{{ . | first | value | humanize }}{{ end }}%) exceeds 12M rate ({{ with query \"max by(maturity) (euribor_rate_percent{maturity='12M'})\" }}{{ . | first | value | humanize }}{{ end }}%). This may signal economic concerns."
+            description: |
+              3M rate ({{ with query "max(euribor_daily_rate_percent{maturity='3M'})" }}{{ . | first | value | humanize }}{{ end }}%) exceeds 12M rate ({{ with query "max(euribor_daily_rate_percent{maturity='12M'})" }}{{ . | first | value | humanize }}{{ end }}%).
+              
+              This typically signals markets expect ECB to cut rates.
+              May be good time to WAIT before fixing mortgage rate.
 
         # Unusual spread between maturities
         - alert: EuriborSpreadUnusual
           expr: |
             abs(
-              max by(maturity) (euribor_rate_percent{maturity="12M"})
+              max(euribor_daily_rate_percent{maturity="12M"})
               -
-              max by(maturity) (euribor_rate_percent{maturity="3M"})
+              max(euribor_daily_rate_percent{maturity="3M"})
             ) > 0.5
           for: 6h
           labels:
@@ -193,14 +239,19 @@ spec:
             category: market_conditions
           annotations:
             summary: "Unusual spread between 3M and 12M Euribor"
-            description: "The spread is {{ $value | humanize }}%, which is unusually high. 3M: {{ with query \"max by(maturity) (euribor_rate_percent{maturity='3M'})\" }}{{ . | first | value }}{{ end }}%, 12M: {{ with query \"max by(maturity) (euribor_rate_percent{maturity='12M'})\" }}{{ . | first | value }}{{ end }}%"
+            description: |
+              The spread is {{ $value | humanize }}%, which is unusually high.
+              
+              3M: {{ with query "max(euribor_daily_rate_percent{maturity='3M'})" }}{{ . | first | value | humanize }}{{ end }}%
+              12M: {{ with query "max(euribor_daily_rate_percent{maturity='12M'})" }}{{ . | first | value | humanize }}{{ end }}%
 
+        # Downward trend (good for mortgage holders)
         - alert: EuriborDownwardTrend
           expr: |
             (
-              avg_over_time(euribor_rate_percent{maturity="12M"}[7d])
+              avg_over_time(euribor_daily_rate_percent{maturity="12M"}[7d])
               -
-              avg_over_time(euribor_rate_percent{maturity="12M"}[7d] offset 7d)
+              avg_over_time(euribor_daily_rate_percent{maturity="12M"}[7d] offset 7d)
             ) < -0.05
           for: 24h
           labels:
@@ -209,5 +260,125 @@ spec:
           annotations:
             summary: "Sustained downward trend in 12M Euribor"
             description: |
-              7-day average is declining consistently.
-              This suggests ECB may continue lowering rates
+              📉 Good news! 7-day average is declining consistently.
+              
+              Change: {{ $value | humanize }}% per week
+              
+              This suggests ECB may continue lowering rates.
+              Consider WAITING if you're thinking about fixing your rate.
+
+        # Upward trend (bad for mortgage holders)
+        - alert: EuriborUpwardTrend
+          expr: |
+            (
+              avg_over_time(euribor_daily_rate_percent{maturity="12M"}[7d])
+              -
+              avg_over_time(euribor_daily_rate_percent{maturity="12M"}[7d] offset 7d)
+            ) > 0.05
+          for: 24h
+          labels:
+            severity: warning
+            category: market_conditions
+          annotations:
+            summary: "Sustained upward trend in 12M Euribor"
+            description: |
+              📈 Warning: 7-day average is rising consistently.
+              
+              Change: +{{ $value | humanize }}% per week
+              
+              Consider fixing your mortgage rate before it rises further.
+
+    - name: euribor_mortgage_planning
+      interval: 1h
+      rules:
+        # ========================================================================
+        # MORTGAGE-SPECIFIC ALERTS
+        # ========================================================================
+
+        # Rate at attractive level for fixing
+        - alert: Euribor12MAttractiveLevelForFixing
+          expr: max(euribor_daily_rate_percent{maturity="12M"}) < 2.0
+          for: 24h
+          labels:
+            severity: info
+            category: mortgage_opportunity
+          annotations:
+            summary: "12M Euribor at attractive level ({{ $value | humanize }}%)"
+            description: |
+              💡 Opportunity: 12M Euribor has been below 2.0% for 24h.
+              
+              This could be a good time to:
+              - Lock in a fixed-rate mortgage
+              - Refinance to fixed rate
+              - Negotiate better terms with your bank
+
+        # Good time to switch from 12M to 3M (if possible)
+        - alert: EuriborBetterRateAvailable
+          expr: |
+            (
+              max(euribor_daily_rate_percent{maturity="12M"})
+              -
+              max(euribor_daily_rate_percent{maturity="3M"})
+            ) > 0.3
+          for: 6h
+          labels:
+            severity: info
+            category: mortgage_opportunity
+          annotations:
+            summary: "3M Euribor significantly lower than 12M"
+            description: |
+              3M rate is {{ $value | humanize }}% lower than 12M rate.
+              
+              If your mortgage allows quarterly adjustment, switching could save money.
+              Check with your bank about changing adjustment frequency.
+
+    - name: euribor_data_quality
+      interval: 5m
+      rules:
+        # ========================================================================
+        # DATA QUALITY & CONSISTENCY CHECKS
+        # ========================================================================
+
+        # Detect if daily and ECB data diverge (if both enabled)
+        - alert: EuriborDataSourceDivergence
+          expr: |
+            abs(
+              max by(maturity) (euribor_daily_rate_percent)
+              -
+              max by(maturity) (euribor_rate_percent)
+            ) > 0.3
+          for: 24h
+          labels:
+            severity: warning
+            category: data_quality
+          annotations:
+            summary: "Daily and ECB Euribor data diverging for {{ $labels.maturity }}"
+            description: |
+              Daily scraped data and ECB monthly data differ by {{ $value | humanize }}%.
+              
+              This is unusual and may indicate:
+              - Scraper parsing error
+              - ECB data not updated
+              - Significant rate change in current month
+
+        # Rate seems unrealistic (sanity check)
+        - alert: EuriborRateUnrealistic
+          expr: |
+            max by(maturity) (euribor_daily_rate_percent) > 10
+            or
+            max by(maturity) (euribor_daily_rate_percent) < -2
+          for: 5m
+          labels:
+            severity: critical
+            category: data_quality
+          annotations:
+            summary: "Unrealistic Euribor rate detected: {{ $labels.maturity }}"
+            description: |
+              Rate of {{ $value | humanize }}% seems unrealistic.
+              
+              This likely indicates:
+              - Scraper parsing error
+              - Website structure changed
+              - Data corruption
+              
+              Check scraper logs immediately.
