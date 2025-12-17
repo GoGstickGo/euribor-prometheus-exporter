@@ -26,6 +26,7 @@ spec:
           labels:
             severity: warning
             category: finance
+            namespace: monitoring
           annotations:
             summary: "Euribor {{ $labels.maturity }} increased moderately"
             description: "{{ $labels.maturity }} increased by {{ $value | humanize }}% in the last 6 hours. Current rate: {{ with query \"max by(maturity) (euribor_daily_rate_percent{maturity='\" }}{{ . | first | value | humanize }}{{ end }}%"
@@ -41,6 +42,7 @@ spec:
           labels:
             severity: critical
             category: finance
+            namespace: monitoring
           annotations:
             summary: "Euribor {{ $labels.maturity }} increased significantly!"
             description: "MAJOR CHANGE: {{ $labels.maturity }} increased by {{ $value | humanize }}% in 6 hours. This is unusual and may indicate market stress."
@@ -56,6 +58,7 @@ spec:
           labels:
             severity: warning
             category: personal_mortgage
+            namespace: monitoring
           annotations:
             summary: "12M Euribor increased by {{ $value | humanize }}% this week"
             description: |
@@ -73,6 +76,7 @@ spec:
           labels:
             severity: info
             category: finance
+            namespace: monitoring
           annotations:
             summary: "Euribor {{ $labels.maturity }} decreased"
             description: "Good news! {{ $labels.maturity }} decreased by {{ $value | humanize }}% in the last 6 hours."
@@ -91,6 +95,7 @@ spec:
           labels:
             severity: warning
             category: monitoring
+            namespace: monitoring
           annotations:
             summary: "Daily Euribor scrape failed for {{ $labels.maturity }}"
             description: "Failed to scrape {{ $labels.maturity }} Euribor rate for 5 minutes. Check exporter logs: kubectl logs -n monitoring deployment/euribor-exporter-daily"
@@ -105,6 +110,7 @@ spec:
           labels:
             severity: critical
             category: monitoring
+            namespace: monitoring
           annotations:
             summary: "Daily Euribor exporter completely down"
             description: "All daily Euribor rates failing or exporter is down. Check pod: kubectl get pods -n monitoring -l app=euribor-exporter"
@@ -118,6 +124,7 @@ spec:
           labels:
             severity: warning
             category: monitoring
+            namespace: monitoring
           annotations:
             summary: "Euribor daily data stale for {{ $labels.maturity }}"
             description: "{{ $labels.maturity }} publication date is >3 days old. Last update: {{ $value | humanizeDuration }} ago. ECB publishes daily on business days only."
@@ -129,6 +136,7 @@ spec:
           labels:
             severity: info
             category: performance
+            namespace: monitoring
           annotations:
             summary: "Daily Euribor scrape is slow"
             description: "Scraping {{ $labels.maturity }} is taking {{ $value }}s. Website may be slow or experiencing issues."
@@ -136,13 +144,14 @@ spec:
         # Scraper hasn't run recently (should run every hour)
         - alert: EuriborDailyScraperNotRunning
           expr: |
-            (time() - max by(maturity) (euribor_daily_publication_date_timestamp)) > 7200
+            (time() - max by(maturity) (euribor_daily_publication_date_timestamp)) > 259200
             and
             max by(maturity) (euribor_daily_scrape_success) == 1
           for: 30m
           labels:
             severity: warning
             category: monitoring
+            namespace: monitoring
           annotations:
             summary: "Daily scraper hasn't updated {{ $labels.maturity }} recently"
             description: "Last successful scrape was >2h ago but scraper shows success. Check scrape interval configuration."
@@ -161,6 +170,7 @@ spec:
           labels:
             severity: warning
             category: personal_finance
+            namespace: monitoring
           annotations:
             summary: "Euribor 12M above your threshold"
             description: |
@@ -178,6 +188,7 @@ spec:
           labels:
             severity: critical
             category: personal_finance
+            namespace: monitoring
           annotations:
             summary: "Euribor 12M critically high"
             description: |
@@ -193,6 +204,7 @@ spec:
           labels:
             severity: critical
             category: personal_mortgage
+            namespace: monitoring
           annotations:
             summary: "12M Euribor very high ({{ $value | humanize }}%)"
             description: |
@@ -217,6 +229,7 @@ spec:
           labels:
             severity: info
             category: market_conditions
+            namespace: monitoring
           annotations:
             summary: "Euribor yield curve inverted"
             description: |
@@ -237,6 +250,7 @@ spec:
           labels:
             severity: info
             category: market_conditions
+            namespace: monitoring
           annotations:
             summary: "Unusual spread between 3M and 12M Euribor"
             description: |
@@ -257,6 +271,7 @@ spec:
           labels:
             severity: info
             category: market_conditions
+            namespace: monitoring
           annotations:
             summary: "Sustained downward trend in 12M Euribor"
             description: |
@@ -279,6 +294,7 @@ spec:
           labels:
             severity: warning
             category: market_conditions
+            namespace: monitoring
           annotations:
             summary: "Sustained upward trend in 12M Euribor"
             description: |
@@ -302,6 +318,7 @@ spec:
           labels:
             severity: info
             category: mortgage_opportunity
+            namespace: monitoring
           annotations:
             summary: "12M Euribor at attractive level ({{ $value | humanize }}%)"
             description: |
@@ -324,6 +341,7 @@ spec:
           labels:
             severity: info
             category: mortgage_opportunity
+            namespace: monitoring
           annotations:
             summary: "3M Euribor significantly lower than 12M"
             description: |
@@ -351,6 +369,7 @@ spec:
           labels:
             severity: warning
             category: data_quality
+            namespace: monitoring 
           annotations:
             summary: "Daily and ECB Euribor data diverging for {{ $labels.maturity }}"
             description: |
@@ -371,6 +390,7 @@ spec:
           labels:
             severity: critical
             category: data_quality
+            namespace: monitoring 
           annotations:
             summary: "Unrealistic Euribor rate detected: {{ $labels.maturity }}"
             description: |
