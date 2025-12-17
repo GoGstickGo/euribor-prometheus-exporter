@@ -1,4 +1,4 @@
-# Euribor Prometheus Exporter - Complete Documentation
+# Euribor Prometheus Exporter
 
 A high-performance Prometheus exporter written in Go that fetches **daily** Euribor interest rates by scraping [euribor-rates.eu](https://www.euribor-rates.eu/), with optional ECB monthly data support.
 
