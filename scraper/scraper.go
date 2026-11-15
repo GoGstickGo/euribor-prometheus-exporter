@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -41,6 +42,11 @@ func New(log *logrus.Logger) *Scraper {
 	return &Scraper{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
 		},
 		log: log,
 	}

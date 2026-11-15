@@ -1,5 +1,5 @@
 # Multi-stage build for smaller final image
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git make
@@ -29,7 +29,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 FROM alpine:latest
 
 # Add ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata  && update-ca-certificates
 
 # Create non-root user
 RUN addgroup -g 1000 exporter && \
