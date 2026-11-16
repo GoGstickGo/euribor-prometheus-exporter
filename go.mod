@@ -1,6 +1,6 @@
 module github.com/GoGstickGo/euribor-exporter
 
-go 1.27
+go 1.27.4
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
